@@ -119,20 +119,7 @@ def main():
         #     print_every=100,
         #     traj_every=max(1, args.traj_every),
         # ),
-        "dqn": lambda: DQNRepresentation(
-            episodes=args.dqn_episodes,
-            lr=args.dqn_lr,
-            device=args.device,
-            verbose=True,
-            print_every=100,
-            traj_every=max(1, args.traj_every),
-        ),
-        # "dqn_mp": lambda: DQNMovePaintRepresentation(
-        #     episodes=1000, gamma=0.95, lr=1e-3,
-        #     eps_start=0.6, eps_end=0.05, step_mult=4.0,
-        #     device=args.device, verbose=True, print_every=100, traj_every=max(1, args.traj_every),
-        # ),
-        # "dqn_agn": lambda: DQNAgnosticRepresentation(
+        # "dqn": lambda: DQNRepresentation(
         #     episodes=args.dqn_episodes,
         #     lr=args.dqn_lr,
         #     device=args.device,
@@ -140,6 +127,18 @@ def main():
         #     print_every=100,
         #     traj_every=max(1, args.traj_every),
         # ),
+        # "dqn_mp": lambda: DQNMovePaintRepresentation(
+        #     episodes=1000, gamma=0.95, lr=1e-3,
+        #     eps_start=0.6, eps_end=0.05, step_mult=4.0,
+        #     device=args.device, verbose=True, print_every=100, traj_every=max(1, args.traj_every),
+        # ),
+        "dqn_agn": lambda: DQNAgnosticRepresentation(
+            lr=args.dqn_lr,
+            device=args.device,
+            verbose=True,
+            print_every=20,
+            traj_every=max(1, args.traj_every),
+        ),
     }
 
     out_dir = "embeddings"
