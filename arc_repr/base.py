@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Dict, Callable, Optional
 import torch
 from torch import nn
 
 Tensor = torch.Tensor
+FitCallback = Callable[[int, Tensor], None]  # (step_idx, embedding) -> None
 
 
 class RepresentationExtractor(ABC):
@@ -11,13 +12,15 @@ class RepresentationExtractor(ABC):
     Common interface for per-(input, output) representation learning.
 
     Call flow:
-      - fit(input_grid, output_grid): trains internal model on this single pair
-      - embed(): returns a 1D tensor embedding (e.g., flattened weights)
-      - predict(input_grid): optional grid prediction after training
+      - fit(input_grid, output_grid, callback=None): train on this pair.
+          callback(step_idx:int, embedding:Tensor) is called periodically.
+      - embed(): returns 1D tensor embedding (e.g., flattened weights)
+      - predict(input_grid): optional prediction after training
     """
 
     @abstractmethod
-    def fit(self, input_grid: Tensor, output_grid: Tensor) -> "RepresentationExtractor":
+    def fit(self, input_grid: Tensor, output_grid: Tensor,
+            callback: Optional[FitCallback] = None) -> "RepresentationExtractor":
         ...
 
     @abstractmethod

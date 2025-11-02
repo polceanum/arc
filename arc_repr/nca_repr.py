@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 import torch
 from torch import nn, optim
-from .base import RepresentationExtractor, Tensor
+from .base import RepresentationExtractor, Tensor, FitCallback
 
 # ------------------------------------------------------------
 # Helpers
@@ -83,6 +83,7 @@ class NCARepresentation(RepresentationExtractor):
         device: str = "cpu",
         verbose: bool = False,
         print_every: int = 100,
+        traj_every: int = 10,
     ):
         self.step_min = step_min
         self.step_max = step_max
@@ -95,12 +96,13 @@ class NCARepresentation(RepresentationExtractor):
         self.device = device
         self.verbose = verbose
         self.print_every = print_every
+        self.traj_every = traj_every
 
         self.model = SoftmaxNCA(latent_ch=latent_ch, hidden=hidden, fire_rate=fire_rate).to(device)
         self._shape: Optional[Tuple[int, int]] = None
         self._last_loss: Optional[float] = None
 
-    def fit(self, input_grid: Tensor, output_grid: Tensor) -> "NCARepresentation":
+    def fit(self, input_grid: Tensor, output_grid: Tensor, callback: Optional[FitCallback] = None) -> "NCARepresentation":
         if input_grid.shape != output_grid.shape:
             raise ValueError("NCARepresentation expects equal HxW (you enabled same-shape filtering).")
 
@@ -141,6 +143,10 @@ class NCARepresentation(RepresentationExtractor):
             self._last_loss = float(loss.item())
             if self.verbose and (it % self.print_every == 0 or it == 1 or it == self.iters):
                 print(f"[NCA] it {it:4d}/{self.iters}  steps={steps:2d}  CE={self._last_loss:.4f}")
+            
+            # ---- trajectory callback ----
+            if callback is not None and (it % self.traj_every == 0 or it == 1 or it == self.iters):
+                callback(it, self._flatten_params().cpu())
 
         return self
 

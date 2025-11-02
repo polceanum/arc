@@ -1,4 +1,4 @@
-from typing import Optional, List, Tuple
+from typing import Optional
 import random
 import torch
 from torch import nn, optim
@@ -12,7 +12,7 @@ def _to_unit(x: Tensor) -> Tensor:
 
 class GridPointerEnv:
     """
-    Simple env:
+    Same simple env as before:
       - Iterate cells in raster order.
       - Action = choose color in {0..9} for the current cell.
       - Reward = 1 if matches target at that cell else 0.
@@ -48,32 +48,38 @@ class GridPointerEnv:
         return (self._obs() if not done else None), reward, done
 
 
-class SmallDQN(nn.Module):
+class SmallDQNAgnostic(nn.Module):
     """
-    Small CNN body -> MLP head for 10 Q-values (one per color).
+    Size-agnostic CNN:
+      - Convs over (2,H,W)
+      - Global Average Pooling to (B, C, 1, 1)
+      - MLP head to 10 Q-values
+    Works for any HxW >= 1x1.
     """
-    def __init__(self, H: int, W: int):
+    def __init__(self):
         super().__init__()
         self.body = nn.Sequential(
-            nn.Conv2d(2, 16, 3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, 3, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
+            nn.Conv2d(2, 16, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(),
         )
-        with torch.no_grad():
-            feat_dim = self.body(torch.zeros(1, 2, H, W)).shape[-1]
+        self.gap = nn.AdaptiveAvgPool2d(output_size=(1, 1))  # -> (B, 32, 1, 1)
         self.head = nn.Sequential(
-            nn.Linear(feat_dim, 64),
-            nn.ReLU(),
+            nn.Linear(32, 64), nn.ReLU(),
             nn.Linear(64, 10),
         )
 
     def forward(self, obs: Tensor) -> Tensor:
-        return self.head(self.body(obs))
+        # obs: (B,2,H,W)
+        x = self.body(obs)                   # (B,32,H,W)
+        x = self.gap(x).squeeze(-1).squeeze(-1)  # (B,32)
+        return self.head(x)                  # (B,10)
 
 
-class DQNRepresentation(RepresentationExtractor):
+class DQNAgnosticRepresentation(RepresentationExtractor):
+    """
+    DQN variant whose parameter count is independent of input grid size.
+    Uses global average pooling so embeddings are comparable across HxW.
+    """
     def __init__(
         self,
         episodes: int = 8,
@@ -96,10 +102,9 @@ class DQNRepresentation(RepresentationExtractor):
         self.print_every = print_every
         self.traj_every = traj_every
 
-        self.model: Optional[SmallDQN] = None
-        self.H = self.W = None
-        self._last_acc: float = 0.0
+        self.model: Optional[SmallDQNAgnostic] = None
         self._shape = None  # (H, W)
+        self._last_acc: float = 0.0
 
     def _eps_schedule(self, ep: int) -> float:
         if self.episodes <= 1:
@@ -107,27 +112,28 @@ class DQNRepresentation(RepresentationExtractor):
         a = ep / (self.episodes - 1)
         return self.eps_start * (1 - a) + self.eps_end * a
 
-    def fit(self, input_grid: Tensor, output_grid: Tensor, callback: Optional[FitCallback] = None) -> "DQNRepresentation":
+    def fit(self, input_grid: Tensor, output_grid: Tensor, callback: Optional[FitCallback] = None) -> "DQNAgnosticRepresentation":
         if input_grid.shape != output_grid.shape:
-            raise ValueError("DQNRepresentation expects equal HxW (you chose same-shape filtering).")
+            raise ValueError("DQNAgnosticRepresentation expects equal HxW (same-shape filtering).")
 
         self._shape = tuple(output_grid.shape)
         env = GridPointerEnv(input_grid, output_grid)
-        self.H, self.W = env.H, env.W
 
-        self.model = SmallDQN(self.H, self.W).to(self.device)
+        self.model = SmallDQNAgnostic().to(self.device)
         opt = optim.Adam(self.model.parameters(), lr=self.lr)
         loss_fn = nn.MSELoss()
 
-        steps_total = self.H * self.W
+        steps_total = env.N
         self.model.train()
         last_acc = 0.0
+
         for ep in range(1, self.episodes + 1):
             obs = env.reset().unsqueeze(0).to(self.device)  # (1,2,H,W)
             eps = self._eps_schedule(ep - 1)
             correct = 0
+
             for _ in range(steps_total):
-                # ε-greedy
+                # ε-greedy over 10 colors
                 if random.random() < eps:
                     action = random.randint(0, 9)
                 else:
@@ -137,9 +143,10 @@ class DQNRepresentation(RepresentationExtractor):
                 next_obs, reward, done = env.step(action)
                 correct += int(reward)
 
-                q_pred = self.model(obs)
+                q_pred = self.model(obs)              # (1,10)
                 target = q_pred.detach().clone()
-                target[0, action] = reward  # gamma=0 simple target
+                # gamma=0 simple target; keep identical to original baseline
+                target[0, action] = reward
 
                 loss = loss_fn(q_pred, target)
                 opt.zero_grad(set_to_none=True)
@@ -152,9 +159,9 @@ class DQNRepresentation(RepresentationExtractor):
 
             last_acc = correct / steps_total
             if self.verbose and (ep % self.print_every == 0 or ep == 1 or ep == self.episodes):
-                print(f"[DQN] ep {ep:3d}/{self.episodes}  steps={steps_total}  acc={last_acc:.3f}  eps={eps:.3f}")
+                H, W = self._shape
+                print(f"[DQN-AGN] ep {ep:3d}/{self.episodes}  steps={steps_total}  acc={last_acc:.3f}  eps={eps:.3f}  shape={H}x{W}")
 
-            # ---- trajectory callback ----
             if callback is not None and (ep % self.traj_every == 0 or ep == 1 or ep == self.episodes):
                 callback(ep, self._flatten_params().cpu())
 
