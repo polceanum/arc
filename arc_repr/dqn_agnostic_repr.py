@@ -68,18 +68,18 @@ class SmallDQNAgnostic(nn.Module):
     def __init__(self):
         super().__init__()
         self.body = nn.Sequential(
-            nn.Conv2d(2, 32, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(2, 8, 3, padding=1), nn.ReLU(),
+            nn.Conv2d(8, 16, 3, padding=1), nn.ReLU(),
         )
-        self.gap = nn.AdaptiveAvgPool2d(output_size=(1, 1))  # -> (B, 64, 1, 1)
+        self.gap = nn.AdaptiveAvgPool2d(output_size=(1, 1))  # -> (B, 16, 1, 1)
         self.head = nn.Sequential(
-            nn.Linear(64, 128), nn.ReLU(),
-            nn.Linear(128, 10),
+            nn.Linear(16, 32), nn.ReLU(),
+            nn.Linear(32, 10),
         )
 
     def forward(self, obs: Tensor) -> Tensor:
-        x = self.body(obs)                        # (B,64,H,W)
-        x = self.gap(x).squeeze(-1).squeeze(-1)  # (B,64)
+        x = self.body(obs)                        # (B,16,H,W)
+        x = self.gap(x).squeeze(-1).squeeze(-1)  # (B,16)
         return self.head(x)                       # (B,10)
 
 
@@ -95,8 +95,8 @@ class DQNAgnosticRepresentation(RepresentationExtractor):
         gamma: float = 0.0,          # keep one-step target (reward only)
         lr: float = 1e-3,
         eps_start: float = 0.5,
-        eps_end: float = 0.05,
-        eps_decay: float = 0.99,     # exponential decay per episode (0<decay<1)
+        eps_end: float = 0.001,
+        eps_decay: float = 0.996,     # exponential decay per episode (0<decay<1)
         # misc
         device: str = "cpu",
         verbose: bool = False,

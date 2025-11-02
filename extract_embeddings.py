@@ -136,7 +136,7 @@ def main():
             lr=args.dqn_lr,
             device=args.device,
             verbose=True,
-            print_every=20,
+            print_every=10,
             traj_every=max(1, args.traj_every),
         ),
     }
